@@ -13,15 +13,23 @@
   .spot-free .spot-body { fill: #ffffff; stroke: #adb5bd; }
   .spot-mine .spot-body { fill: #198754; stroke: #146c43; }
   .spot-taken .spot-body { fill: #dc3545; stroke: #b02a37; cursor: not-allowed; }
+  .spot-privacy .spot-body { fill: #0dcaf0; stroke: #0aa2c0; }
+  .spot-gossip .spot-body { fill: #d63384; stroke: #ab296a; }
+  .spot-locked .spot-body { fill: #e9ecef; stroke: #adb5bd; cursor: not-allowed; }
   .spot-initial { font-size: 14px; font-weight: 600; fill: #495057; pointer-events: none; }
-  .spot-mine .spot-initial, .spot-taken .spot-initial { fill: #fff; }
+  .spot-mine .spot-initial, .spot-taken .spot-initial, .spot-privacy .spot-initial, .spot-gossip .spot-initial { fill: #fff; }
   .spot-timer { font-size: 10px; fill: #6c757d; pointer-events: none; }
   .queue-circle {
     width: 32px; height: 32px; border-radius: 50%; background: #0d6efd; color: #fff;
     font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center;
   }
+  .btn-privacy { background: #0dcaf0; border: 1px solid #0aa2c0; color: #000; }
+  .btn-privacy:hover { background: #0aa2c0; color: #000; }
+  .btn-gossip { background: #d63384; border: 1px solid #ab296a; color: #000; }
+  .btn-gossip:hover { background: #ab296a; color: #000; }
   #error-box, #auth-error { display: none; }
   #board-view { display: none; }
+  #gossip-panel { display: none; }
 </style>
 </head>
 <body>
@@ -90,17 +98,25 @@
 
       <div class="d-grid gap-2 mb-2">
         <button id="book-btn" class="btn btn-dark">Occupa un posto</button>
+        <div class="d-flex gap-2">
+          <button id="privacy-btn" class="btn btn-privacy flex-fill">Privacy (2 min)</button>
+          <button id="gossip-btn" class="btn btn-gossip flex-fill">Gossip (5 min)</button>
+        </div>
         <button id="queue-btn" class="btn btn-outline-primary">Mettiti in coda</button>
       </div>
       <div class="text-secondary small mb-2">Libera automaticamente ogni 15 min</div>
       <div id="queue-list" class="d-flex gap-2 mb-3"></div>
 
-      <div id="error-box" class="alert alert-danger small mb-0" role="alert"></div>
-
-      <div class="mt-3">
-        <button id="history-toggle" class="btn btn-sm btn-outline-secondary w-100">Mostra cronologia</button>
-        <ul id="history-list" class="list-group list-group-flush small mt-2" style="display:none;"></ul>
+      <div id="gossip-panel" class="border rounded p-3 mb-3">
+        <div class="small text-secondary mb-2">Seleziona con chi vuoi il Gossip (max 3):</div>
+        <div id="gossip-user-list" class="d-flex flex-column gap-1 mb-3"></div>
+        <div class="d-flex gap-2">
+          <button id="gossip-confirm-btn" class="btn btn-sm btn-gossip">Avvia Gossip</button>
+          <button id="gossip-cancel-btn" class="btn btn-sm btn-outline-secondary">Annulla</button>
+        </div>
       </div>
+
+      <div id="error-box" class="alert alert-danger small mb-0" role="alert"></div>
 
     </div>
   </div>
@@ -110,6 +126,7 @@
 <script>
 (function(){
   var SEAT_TTL_MS = 15 * 60 * 1000;
+  var RESERVATION_TTL_MS = { privacy: 2 * 60 * 1000, gossip: 5 * 60 * 1000 };
   var NAPLES_LAT = 40.8518, NAPLES_LON = 14.2681;
   var WEATHER_ICONS = {
     0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️',
@@ -265,10 +282,15 @@
     return circle + text + timer;
   }
 
-  function remainingLabel(seatSince){
+  function seatTtlFor(reservation){
+    if (!reservation) return SEAT_TTL_MS;
+    return RESERVATION_TTL_MS[reservation.type] || SEAT_TTL_MS;
+  }
+
+  function remainingLabel(seatSince, ttlMs){
     if (!seatSince) return '';
     var elapsed = Date.now() - new Date(seatSince).getTime();
-    var minutes = Math.max(0, Math.ceil((SEAT_TTL_MS - elapsed) / 60000));
+    var minutes = Math.max(0, Math.ceil(((ttlMs || SEAT_TTL_MS) - elapsed) / 60000));
     return minutes + 'm';
   }
 
@@ -276,20 +298,34 @@
     var spotsGroup = document.getElementById('spots');
     spotsGroup.innerHTML = '';
     var occupied = 0;
+    var reservation = board.reservation;
     board.seats.forEach(function(occupant, i){
       var pos = positions[i];
       var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       var cls = 'spot-free';
       var timeLabel = '';
-      if (occupant){
+      var initial = '';
+      var tooltipText = 'libero';
+      if (occupant === true){
         occupied++;
-        cls = occupant === me ? 'spot-mine' : 'spot-taken';
-        timeLabel = remainingLabel(board.seatSince && board.seatSince[i]);
+        cls = 'spot-locked';
+        initial = '🔒';
+        tooltipText = 'posto bloccato';
+      } else if (occupant){
+        occupied++;
+        timeLabel = remainingLabel(board.seatSince && board.seatSince[i], seatTtlFor(reservation));
+        initial = occupant.charAt(0).toUpperCase();
+        tooltipText = timeLabel ? occupant + ' · libero tra ' + timeLabel : occupant;
+        if (reservation && reservation.type === 'privacy'){
+          cls = 'spot-privacy';
+        } else if (reservation && reservation.type === 'gossip'){
+          cls = 'spot-gossip';
+        } else {
+          cls = occupant === me ? 'spot-mine' : 'spot-taken';
+        }
       }
       g.setAttribute('class', 'spot ' + cls);
-      var initial = occupant ? occupant.charAt(0).toUpperCase() : '';
       g.innerHTML = standingFront(pos.x, pos.y, initial, timeLabel);
-      var tooltipText = occupant ? (timeLabel ? occupant + ' · libero tra ' + timeLabel : occupant) : 'libero';
       g.addEventListener('mouseenter', function(evt){ showTooltip(tooltipText, evt); });
       g.addEventListener('mousemove', moveTooltip);
       g.addEventListener('mouseleave', hideTooltip);
@@ -316,31 +352,6 @@
       circle.addEventListener('mouseleave', hideTooltip);
       queueList.appendChild(circle);
     });
-
-    var historyList = document.getElementById('history-list');
-    historyList.innerHTML = '';
-    if (board.history.length === 0){
-      var empty = document.createElement('li');
-      empty.className = 'list-group-item text-secondary';
-      empty.textContent = 'Nessuna prenotazione ancora.';
-      historyList.appendChild(empty);
-    } else {
-      board.history.forEach(function(entry){
-        var li = document.createElement('li');
-        li.className = 'list-group-item d-flex justify-content-between';
-        var time = new Date(entry.time);
-        var pad = function(x){ return x < 10 ? '0'+x : ''+x; };
-        var timeLabel = pad(time.getHours()) + ':' + pad(time.getMinutes());
-        var nameSpan = document.createElement('span');
-        nameSpan.textContent = entry.name;
-        var timeSpan = document.createElement('span');
-        timeSpan.className = 'text-secondary';
-        timeSpan.textContent = timeLabel;
-        li.appendChild(nameSpan);
-        li.appendChild(timeSpan);
-        historyList.appendChild(li);
-      });
-    }
   }
 
   async function loadState(){
@@ -373,12 +384,63 @@
     } catch(e){ showError(e.message); }
   });
 
-  document.getElementById('history-toggle').addEventListener('click', function(){
-    var list = document.getElementById('history-list');
-    var btn = document.getElementById('history-toggle');
-    var visible = list.style.display !== 'none';
-    list.style.display = visible ? 'none' : 'block';
-    btn.textContent = visible ? 'Mostra cronologia' : 'Nascondi cronologia';
+  document.getElementById('privacy-btn').addEventListener('click', async function(){
+    clearError();
+    document.getElementById('gossip-panel').style.display = 'none';
+    try {
+      var data = await api('/api/privacy', { method: 'POST' });
+      renderBoard(data);
+    } catch(e){ showError(e.message); }
+  });
+
+  document.getElementById('gossip-btn').addEventListener('click', async function(){
+    clearError();
+    try {
+      var data = await api('/api/users');
+      var list = document.getElementById('gossip-user-list');
+      list.innerHTML = '';
+      if (data.users.length === 0){
+        var empty = document.createElement('div');
+        empty.className = 'text-secondary small';
+        empty.textContent = 'Nessun altro utente registrato.';
+        list.appendChild(empty);
+      } else {
+        data.users.forEach(function(u){
+          var label = document.createElement('label');
+          label.className = 'form-check';
+          var input = document.createElement('input');
+          input.type = 'checkbox';
+          input.className = 'form-check-input me-2';
+          input.value = u;
+          label.appendChild(input);
+          label.appendChild(document.createTextNode(u));
+          list.appendChild(label);
+        });
+      }
+      document.getElementById('gossip-panel').style.display = 'block';
+    } catch(e){ showError(e.message); }
+  });
+
+  document.getElementById('gossip-cancel-btn').addEventListener('click', function(){
+    document.getElementById('gossip-panel').style.display = 'none';
+  });
+
+  document.getElementById('gossip-confirm-btn').addEventListener('click', async function(){
+    clearError();
+    var checked = Array.prototype.slice.call(document.querySelectorAll('#gossip-user-list input:checked')).map(function(el){ return el.value; });
+    if (checked.length === 0){
+      showError('Seleziona almeno un utente da invitare.');
+      return;
+    }
+    if (checked.length > 3){
+      showError('Massimo 3 utenti oltre a te.');
+      return;
+    }
+    try {
+      var data = await api('/api/gossip', { method: 'POST', body: JSON.stringify({ members: checked }) });
+      document.getElementById('gossip-panel').style.display = 'none';
+      renderBoard(data);
+    } catch(e){ showError(e.message); }
   });
 
   // check if already logged in (existing session cookie)

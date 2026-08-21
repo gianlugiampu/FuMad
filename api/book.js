@@ -21,6 +21,11 @@ module.exports = async (req, res) => {
         err.statusCode = 409;
         throw err;
       }
+      if (b.reservation) {
+        const err = new Error('Il balcone e riservato al momento.');
+        err.statusCode = 409;
+        throw err;
+      }
       const freeIndex = b.seats.indexOf(null);
       if (freeIndex === -1) {
         const err = new Error('Nessun posto libero. Mettiti in coda.');

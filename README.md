@@ -7,6 +7,8 @@ Stessa app (login, board 4 posti, coda, cronologia, cleanup ogni 15 min) riscrit
 - **Storage**: da file JSON locali a **Postgres** (compatibile con Supabase, Neon, Vercel Postgres — qualsiasi Postgres va bene, basta la connection string).
 - **Sessioni**: da sessione server-side a **JWT stateless** in un cookie httpOnly. Nessuno stato di sessione da condividere tra istanze serverless.
 - **Cleanup ogni 15 minuti**: niente `setInterval` (non funziona su serverless). Ogni posto ha il proprio timer individuale: ogni richiesta all'API controlla, posto per posto, se sono passati 15+ minuti da quando è stato occupato e, in caso, lo libera e riassegna dalla coda prima di rispondere. Gli altri posti occupati più di recente non vengono toccati. Nessun cron necessario, funziona anche sul piano gratuito.
+- **Privacy**: riserva tutto il balcone solo per te per 2 minuti — richiede che sia completamente libero. Il tuo posto appare azzurro, gli altri 3 bloccati (nessuno può occuparli finché la riserva è attiva). Puoi terminarla in anticipo cliccando sul tuo posto.
+- **Gossip**: riserva il balcone per te + fino a 3 colleghi selezionati (dagli utenti registrati) per 5 minuti — richiede anche questo il balcone libero. I posti del gruppo appaiono rosa, gli eventuali posti in eccesso restano bloccati. Solo chi l'ha avviato può terminarla in anticipo.
 
 ## Struttura
 
@@ -19,12 +21,16 @@ fumad-vercel/
     me.js         GET  - utente corrente dal cookie
     state.js      GET  - stato board (applica cleanup lazy se necessario)
     book.js       POST - occupa il primo posto libero
-    free.js       POST - libera il tuo posto
+    free.js       POST - libera il tuo posto (o termina una prenotazione Privacy/Gossip se sei tu ad averla avviata)
     queue.js      POST - mettiti in coda
+    privacy.js    POST - riserva tutto il balcone solo per te, 2 minuti
+    gossip.js     POST - riserva il balcone per te + fino a 3 colleghi selezionati, 5 minuti
+    users.js      GET  - elenco utenti registrati (esclude te stesso), usato per selezionare chi invitare al Gossip
   lib/
     db.js         Pool Postgres + creazione schema automatica al primo uso
     auth.js       Firma/verifica JWT, gestione cookie
-    board.js      Logica cleanup lazy + assegnazione dalla coda
+    board.js      Logica cleanup lazy, assegnazione dalla coda, prenotazioni Privacy/Gossip
+    rateLimit.js  Limite tentativi per IP su register/login
   public/
     index.html    Frontend: login/registrazione + board
 ```

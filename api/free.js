@@ -1,6 +1,6 @@
 const { withClient } = require('../lib/db');
 const { requireAuth } = require('../lib/auth');
-const { withBoard, freeSeat } = require('../lib/board');
+const { withBoard, freeSeat, clearReservation } = require('../lib/board');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -11,6 +11,15 @@ module.exports = async (req, res) => {
 
   try {
     const { board } = await withClient((client) => withBoard(client, (b) => {
+      if (b.reservation) {
+        if (b.reservation.owner !== username) {
+          const err = new Error('Solo chi ha avviato la prenotazione puo terminarla.');
+          err.statusCode = 409;
+          throw err;
+        }
+        clearReservation(b);
+        return;
+      }
       const idx = b.seats.indexOf(username);
       if (idx === -1) {
         const err = new Error('Non hai un posto occupato.');
