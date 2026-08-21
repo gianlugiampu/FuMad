@@ -1,6 +1,6 @@
 const { withClient } = require('../lib/db');
 const { requireAuth } = require('../lib/auth');
-const { withBoard, startReservation, parseBalconyId } = require('../lib/board');
+const { withBoard, startReservation, parseBalconyId, assertNotOnOtherBalcony } = require('../lib/board');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -25,8 +25,10 @@ module.exports = async (req, res) => {
         err.statusCode = 400;
         throw err;
       }
+      const group = [username].concat(members);
+      await assertNotOnOtherBalcony(client, group, balcony);
       return withBoard(client, balcony, (b) => {
-        startReservation(b, 'gossip', [username].concat(members));
+        startReservation(b, 'gossip', group);
       });
     });
     res.status(200).json({ ...board, balcony });

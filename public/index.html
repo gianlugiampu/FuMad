@@ -18,6 +18,10 @@
   #heat-alert-overlay.active { display: block; }
   .btn-heat { background: #fd7e14; border: 1px solid #c0530a; color: #000; }
   .btn-heat:hover { background: #c0530a; color: #000; }
+  .occupancy-bar { flex: 1; margin: 0 1px; background: #0d6efd; border-radius: 2px 2px 0 0; min-height: 2px; }
+  html[data-bs-theme="dark"] .occupancy-bar { background: #4dabf7; }
+  .occupancy-bar.occupancy-peak { background: #dc3545; }
+  html[data-bs-theme="dark"] .occupancy-bar.occupancy-peak { background: #ff6b6b; }
   #rain-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; display: none; }
   #rain-overlay.active { display: block; }
   .rain-drop {
@@ -162,6 +166,14 @@
 
       <div class="d-flex justify-content-center">
         <button id="heat-alert-btn" class="btn btn-sm btn-heat">🔥 Allerta Caldo</button>
+      </div>
+
+      <div class="mt-4">
+        <div class="text-secondary small text-center mb-1">Affollamento per fascia oraria</div>
+        <div id="occupancy-chart" class="d-flex align-items-end justify-content-between" style="height:50px;"></div>
+        <div class="d-flex justify-content-between text-secondary" style="font-size:9px;">
+          <span>0</span><span>6</span><span>12</span><span>18</span><span>23</span>
+        </div>
       </div>
 
     </div>
@@ -316,6 +328,24 @@
     }
   }
 
+  function renderOccupancyChart(history){
+    var counts = new Array(24).fill(0);
+    (history || []).forEach(function(entry){
+      counts[new Date(entry.time).getHours()]++;
+    });
+    var peak = Math.max.apply(null, counts);
+    var scale = Math.max(peak, 1);
+    var chart = document.getElementById('occupancy-chart');
+    chart.innerHTML = '';
+    counts.forEach(function(count, hour){
+      var bar = document.createElement('div');
+      bar.className = 'occupancy-bar' + (peak > 0 && count === peak ? ' occupancy-peak' : '');
+      bar.style.height = Math.max(2, (count / scale) * 100) + '%';
+      bar.title = hour + ':00 - ' + count + (count === 1 ? ' prenotazione' : ' prenotazioni');
+      chart.appendChild(bar);
+    });
+  }
+
   var dismissedHeatAlertSince = null;
 
   function applyHeatAlert(heatAlert){
@@ -437,15 +467,19 @@
           cls = 'spot-privacy';
         } else if (reservation && reservation.type === 'gossip'){
           cls = 'spot-gossip';
+          initial = '';
+          tooltipText = '';
         } else {
           cls = occupant === me ? 'spot-mine' : 'spot-taken';
         }
       }
       g.setAttribute('class', 'spot ' + cls);
       g.innerHTML = standingFront(pos.x, pos.y, initial, timeLabel);
-      g.addEventListener('mouseenter', function(evt){ showTooltip(tooltipText, evt); });
-      g.addEventListener('mousemove', moveTooltip);
-      g.addEventListener('mouseleave', hideTooltip);
+      if (tooltipText){
+        g.addEventListener('mouseenter', function(evt){ showTooltip(tooltipText, evt); });
+        g.addEventListener('mousemove', moveTooltip);
+        g.addEventListener('mouseleave', hideTooltip);
+      }
       g.addEventListener('click', async function(){
         clearError();
         if (occupant !== me) return;
@@ -458,6 +492,7 @@
     });
     document.getElementById('book-btn').textContent = board.seats.indexOf(me) !== -1 ? 'Libera posto' : 'Occupa un posto';
     applyHeatAlert(board.heatAlert);
+    renderOccupancyChart(board.history);
 
     var queueList = document.getElementById('queue-list');
     queueList.innerHTML = '';
@@ -498,6 +533,13 @@
   document.getElementById('balcony-1-btn').addEventListener('click', function(){ switchBalcony(1); });
   document.getElementById('balcony-2-btn').addEventListener('click', function(){ switchBalcony(2); });
 
+  async function queueFallback(){
+    try {
+      var data = await api('/api/queue', { method: 'POST', body: JSON.stringify({ balcony: currentBalcony }) });
+      renderBoard(data);
+    } catch(e){ showError(e.message); }
+  }
+
   document.getElementById('book-btn').addEventListener('click', async function(){
     clearError();
     var haveSeat = lastBoard && lastBoard.seats.indexOf(me) !== -1;
@@ -536,7 +578,23 @@
     try {
       var data = await api('/api/privacy', { method: 'POST', body: JSON.stringify({ balcony: currentBalcony }) });
       renderBoard(data);
-    } catch(e){ showError(e.message); }
+      return;
+    } catch(e){
+      if (currentBalcony === 1){
+        var tryOther = confirm('Il Balcone #1 non e libero per Privacy. Vuoi provare ad attivarla nel Balcone #2?');
+        if (tryOther){
+          try {
+            var data2 = await api('/api/privacy', { method: 'POST', body: JSON.stringify({ balcony: 2 }) });
+            switchBalcony(2);
+            renderBoard(data2);
+            return;
+          } catch(e2){
+            // balcone 2 non disponibile: si prosegue con la coda sul balcone 1 qui sotto
+          }
+        }
+      }
+      await queueFallback();
+    }
   });
 
   document.getElementById('gossip-btn').addEventListener('click', async function(){
@@ -585,11 +643,30 @@
       showError('Massimo ' + maxInvite + ' utenti oltre a te.');
       return;
     }
+    var groupSize = checked.length + 1;
     try {
       var data = await api('/api/gossip', { method: 'POST', body: JSON.stringify({ members: checked, balcony: currentBalcony }) });
       document.getElementById('gossip-panel').style.display = 'none';
       renderBoard(data);
-    } catch(e){ showError(e.message); }
+      return;
+    } catch(e){
+      if (currentBalcony === 1 && groupSize === 2){
+        var tryOther = confirm('Il Balcone #1 non e libero per Gossip. Vuoi provare ad attivarlo nel Balcone #2?');
+        if (tryOther){
+          try {
+            var data2 = await api('/api/gossip', { method: 'POST', body: JSON.stringify({ members: checked, balcony: 2 }) });
+            document.getElementById('gossip-panel').style.display = 'none';
+            switchBalcony(2);
+            renderBoard(data2);
+            return;
+          } catch(e2){
+            // balcone 2 non disponibile: si prosegue con la coda sul balcone 1 qui sotto
+          }
+        }
+      }
+      document.getElementById('gossip-panel').style.display = 'none';
+      await queueFallback();
+    }
   });
 
   // check if already logged in (existing session cookie)
