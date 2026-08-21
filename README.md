@@ -95,9 +95,15 @@ Da quel momento in poi, un `git push` normale ti chiedera nuovamente le credenzi
 | `DATABASE_URL` | la connection string copiata nella Parte 1 |
 | `JWT_SECRET` | una stringa lunga e casuale (genera con `openssl rand -hex 32` sul tuo computer, o un generatore di password online) |
 | `COOKIE_SECURE` | `true` |
+| `REGISTER_INVITE_CODE` | (opzionale) una parola/frase da condividere solo con chi deve potersi registrare — se impostata, la registrazione richiede questo codice; se lasciata vuota/non impostata, la registrazione resta aperta a chiunque trovi l'URL |
 
 5. Premi **Deploy**. Dopo un minuto avrai un URL tipo `https://fumad-tuonome.vercel.app`.
 6. Apri l'URL, registra il primo utente e prova a prenotare un posto.
+
+## Note di sicurezza
+
+- **Registrazione**: se hai impostato `REGISTER_INVITE_CODE`, condividi quel codice solo con le persone che devono potersi registrare (es. i colleghi d'ufficio) — chiunque altro trovi l'URL non potrà creare un account.
+- **Rate limiting**: `/api/register` e `/api/login` sono limitati a 10 tentativi ogni 15 minuti per indirizzo IP, per rallentare bot e tentativi di forza bruta.
 
 ---
 

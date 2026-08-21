@@ -45,6 +45,10 @@
         <label class="form-label small text-secondary">Conferma password</label>
         <input type="password" id="auth-password-confirm" class="form-control" autocomplete="new-password">
       </div>
+      <div class="mb-3" id="auth-invite-group" style="display:none;">
+        <label class="form-label small text-secondary">Codice di invito</label>
+        <input type="text" id="auth-invite" class="form-control" autocomplete="off">
+      </div>
       <button id="auth-submit" class="btn btn-dark w-100">Accedi</button>
       <div id="auth-error" class="alert alert-danger small mt-3 mb-0" role="alert"></div>
     </div>
@@ -130,6 +134,7 @@
   }
 
   var passwordConfirmGroup = document.getElementById('auth-password-confirm-group');
+  var inviteGroup = document.getElementById('auth-invite-group');
 
   document.getElementById('tab-login').addEventListener('click', function(){
     mode = 'login';
@@ -138,6 +143,8 @@
     document.getElementById('auth-submit').textContent = 'Accedi';
     passwordConfirmGroup.style.display = 'none';
     document.getElementById('auth-password-confirm').value = '';
+    inviteGroup.style.display = 'none';
+    document.getElementById('auth-invite').value = '';
     clearAuthError();
   });
   document.getElementById('tab-register').addEventListener('click', function(){
@@ -146,6 +153,7 @@
     document.getElementById('tab-login').classList.remove('active');
     document.getElementById('auth-submit').textContent = 'Crea account';
     passwordConfirmGroup.style.display = 'block';
+    inviteGroup.style.display = 'block';
     clearAuthError();
   });
 
@@ -157,15 +165,17 @@
       showAuthError('Inserisci username e password.');
       return;
     }
+    var payload = { username: username, password: password };
     if (mode === 'register'){
       var passwordConfirm = document.getElementById('auth-password-confirm').value;
       if (password !== passwordConfirm){
         showAuthError('Le password non coincidono.');
         return;
       }
+      payload.inviteCode = document.getElementById('auth-invite').value;
     }
     try {
-      var data = await api('/api/' + mode, { method: 'POST', body: JSON.stringify({ username: username, password: password }) });
+      var data = await api('/api/' + mode, { method: 'POST', body: JSON.stringify(payload) });
       me = data.username;
       showBoard();
     } catch (e){
@@ -254,7 +264,13 @@
         var time = new Date(entry.time);
         var pad = function(x){ return x < 10 ? '0'+x : ''+x; };
         var timeLabel = pad(time.getHours()) + ':' + pad(time.getMinutes());
-        li.innerHTML = '<span>'+entry.name+'</span><span class="text-secondary">'+timeLabel+'</span>';
+        var nameSpan = document.createElement('span');
+        nameSpan.textContent = entry.name;
+        var timeSpan = document.createElement('span');
+        timeSpan.className = 'text-secondary';
+        timeSpan.textContent = timeLabel;
+        li.appendChild(nameSpan);
+        li.appendChild(timeSpan);
         historyList.appendChild(li);
       });
     }

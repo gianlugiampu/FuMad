@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { withClient } = require('../lib/db');
 const { signToken, setAuthCookie } = require('../lib/auth');
+const { getClientIp, checkRateLimit } = require('../lib/rateLimit');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -14,6 +15,7 @@ module.exports = async (req, res) => {
   try {
     const usernameLower = username.toLowerCase();
     const user = await withClient(async (client) => {
+      await checkRateLimit(client, 'login:' + getClientIp(req), 10);
       const { rows } = await client.query(
         'SELECT username, password_hash FROM users WHERE username_lower = $1',
         [usernameLower]
@@ -29,6 +31,6 @@ module.exports = async (req, res) => {
     setAuthCookie(res, token);
     res.status(200).json({ username: user.username });
   } catch (e) {
-    res.status(500).json({ error: e.message || 'Errore imprevisto.' });
+    res.status(e.statusCode || 500).json({ error: e.message || 'Errore imprevisto.' });
   }
 };
