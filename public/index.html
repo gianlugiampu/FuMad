@@ -32,6 +32,12 @@
   @keyframes rain-fall {
     to { top: 110%; }
   }
+  .rail-bar { fill: #2b2b2b; }
+  .rail-posts { stroke: #2b2b2b; }
+  html[data-bs-theme="dark"] .rail-bar { fill: #f1f1f1; }
+  html[data-bs-theme="dark"] .rail-posts { stroke: #f1f1f1; }
+  .btn-book { background: #fff; border: 1px solid #444; color: #000; }
+  .btn-book:hover { background: #e9ecef; color: #000; }
   .spot { cursor: pointer; }
   .spot-body { transition: fill .15s ease; }
   .spot-free .spot-body { fill: #ffffff; stroke: #adb5bd; }
@@ -111,13 +117,16 @@
         <span id="weather-icon">&#9728;&#65039;</span>
         <span id="weather-temp"></span>
       </div>
-      <div id="heat-alert-text" class="text-center small mb-2" style="display:none;"></div>
+      <div id="heat-alert-text" class="text-center small mb-2" style="display:none;">
+        <span id="heat-alert-message"></span>
+        <a href="#" id="heat-alert-dismiss">nascondi sfondo</a>
+      </div>
 
       <svg id="balcony-svg" viewBox="0 0 400 170" style="width:100%;height:auto;">
         <g id="spots"></g>
-        <rect x="0" y="60" width="400" height="10" fill="#2b2b2b"/>
-        <rect x="0" y="130" width="400" height="10" fill="#2b2b2b"/>
-        <g stroke="#2b2b2b" stroke-width="6">
+        <rect x="0" y="60" width="400" height="10" class="rail-bar"/>
+        <rect x="0" y="130" width="400" height="10" class="rail-bar"/>
+        <g class="rail-posts" stroke-width="6">
           <line x1="14" y1="60" x2="14" y2="140"/><line x1="46" y1="60" x2="46" y2="140"/>
           <line x1="78" y1="60" x2="78" y2="140"/><line x1="110" y1="60" x2="110" y2="140"/>
           <line x1="142" y1="60" x2="142" y2="140"/><line x1="174" y1="60" x2="174" y2="140"/>
@@ -129,7 +138,7 @@
       </svg>
 
       <div class="d-grid gap-2 mb-2">
-        <button id="book-btn" class="btn btn-dark">Occupa un posto</button>
+        <button id="book-btn" class="btn btn-book">Occupa un posto</button>
         <div class="d-flex gap-2">
           <button id="privacy-btn" class="btn btn-privacy flex-fill">Privacy (2 min)</button>
           <button id="gossip-btn" class="btn btn-gossip flex-fill">Gossip (5 min)</button>
@@ -306,18 +315,30 @@
     }
   }
 
+  var dismissedHeatAlertSince = null;
+
   function applyHeatAlert(heatAlert){
     var overlay = document.getElementById('heat-alert-overlay');
     var text = document.getElementById('heat-alert-text');
+    var message = document.getElementById('heat-alert-message');
     if (heatAlert && heatAlert.active){
-      overlay.classList.add('active');
-      text.textContent = heatAlert.by + ' ha attivato allarme caldo';
+      message.textContent = heatAlert.by + ' ha attivato allarme caldo';
       text.style.display = 'block';
+      overlay.classList.toggle('active', heatAlert.since !== dismissedHeatAlertSince);
     } else {
       overlay.classList.remove('active');
       text.style.display = 'none';
+      dismissedHeatAlertSince = null;
     }
   }
+
+  document.getElementById('heat-alert-dismiss').addEventListener('click', function(evt){
+    evt.preventDefault();
+    if (lastBoard && lastBoard.heatAlert){
+      dismissedHeatAlertSince = lastBoard.heatAlert.since;
+    }
+    document.getElementById('heat-alert-overlay').classList.remove('active');
+  });
 
   var THEME_KEY = 'fumad-theme';
   function applyTheme(theme){
