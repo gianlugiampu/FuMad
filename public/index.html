@@ -15,6 +15,7 @@
   .spot-taken .spot-body { fill: #dc3545; stroke: #b02a37; cursor: not-allowed; }
   .spot-initial { font-size: 14px; font-weight: 600; fill: #495057; pointer-events: none; }
   .spot-mine .spot-initial, .spot-taken .spot-initial { fill: #fff; }
+  .spot-timer { font-size: 10px; fill: #6c757d; pointer-events: none; }
   .queue-circle {
     width: 32px; height: 32px; border-radius: 50%; background: #0d6efd; color: #fff;
     font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center;
@@ -67,6 +68,11 @@
         </div>
       </div>
 
+      <div class="d-flex justify-content-center align-items-center gap-1 mb-3 text-secondary small" id="weather-bar">
+        <span id="weather-icon">&#9728;&#65039;</span>
+        <span id="weather-temp"></span>
+      </div>
+
       <svg id="balcony-svg" viewBox="0 0 400 170" style="width:100%;height:auto;">
         <g id="spots"></g>
         <rect x="0" y="60" width="400" height="10" fill="#2b2b2b"/>
@@ -103,6 +109,40 @@
 
 <script>
 (function(){
+  var SEAT_TTL_MS = 15 * 60 * 1000;
+  var NAPLES_LAT = 40.8518, NAPLES_LON = 14.2681;
+  var WEATHER_ICONS = {
+    0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️',
+    45: '🌫️', 48: '🌫️',
+    51: '🌦️', 53: '🌦️', 55: '🌦️',
+    56: '🌧️', 57: '🌧️',
+    61: '🌧️', 63: '🌧️', 65: '🌧️',
+    66: '🌧️', 67: '🌧️',
+    71: '❄️', 73: '❄️', 75: '❄️', 77: '❄️',
+    80: '🌦️', 81: '🌧️', 82: '⛈️',
+    85: '🌨️', 86: '🌨️',
+    95: '⛈️', 96: '⛈️', 99: '⛈️'
+  };
+  var WEATHER_COMMENTS = {
+    0: 'cielo sereno', 1: 'quasi sereno', 2: 'poco nuvoloso', 3: 'cielo coperto',
+    45: 'nebbia in vista', 48: 'nebbia gelata',
+    51: 'pioviggine leggera', 53: 'pioviggine', 55: 'pioviggine intensa',
+    56: 'pioviggine gelata', 57: 'pioviggine gelata intensa',
+    61: 'pioggia leggera', 63: 'pioggia', 65: 'pioggia forte',
+    66: 'pioggia gelata', 67: 'pioggia gelata intensa',
+    71: 'neve leggera', 73: 'neve', 75: 'neve forte', 77: 'granelli di neve',
+    80: 'rovesci leggeri', 81: 'rovesci', 82: 'rovesci violenti',
+    85: 'rovesci di neve', 86: 'rovesci di neve forti',
+    95: 'temporale', 96: 'temporale con grandine', 99: 'temporale con grandine forte'
+  };
+
+  function weatherComment(code, temp){
+    var base = WEATHER_COMMENTS[code] || 'meteo variabile';
+    if (temp >= 35) return base + ', caldo torrido';
+    if (temp >= 28) return base + ', giornata calda';
+    if (temp <= 5) return base + ', freddo pungente';
+    return base;
+  }
   var positions = [
     { x: 80, y: 20 }, { x: 160, y: 20 }, { x: 240, y: 20 }, { x: 320, y: 20 }
   ];
@@ -199,12 +239,37 @@
     if (!showBoard.polling){
       showBoard.polling = setInterval(loadState, 5000);
     }
+    loadWeather();
+    if (!showBoard.weatherPolling){
+      showBoard.weatherPolling = setInterval(loadWeather, 30 * 60 * 1000);
+    }
   }
 
-  function standingFront(cx, cy, initial){
+  async function loadWeather(){
+    try {
+      var res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + NAPLES_LAT + '&longitude=' + NAPLES_LON + '&current_weather=true');
+      var data = await res.json();
+      var code = data.current_weather.weathercode;
+      var temp = Math.round(data.current_weather.temperature);
+      document.getElementById('weather-icon').textContent = WEATHER_ICONS[code] || '🌡️';
+      document.getElementById('weather-temp').textContent = temp + '°C, ' + weatherComment(code, temp);
+    } catch (e) {
+      // meteo decorativo, se fallisce non blocca il resto della board
+    }
+  }
+
+  function standingFront(cx, cy, initial, timeLabel){
     var circle = '<circle class="spot-body" cx="'+cx+'" cy="'+cy+'" r="18" stroke-width="1.5"/>';
     var text = initial ? '<text class="spot-initial" x="'+cx+'" y="'+cy+'" text-anchor="middle" dominant-baseline="central">'+initial+'</text>' : '';
-    return circle + text;
+    var timer = timeLabel ? '<text class="spot-timer" x="'+cx+'" y="'+(cy+32)+'" text-anchor="middle">'+timeLabel+'</text>' : '';
+    return circle + text + timer;
+  }
+
+  function remainingLabel(seatSince){
+    if (!seatSince) return '';
+    var elapsed = Date.now() - new Date(seatSince).getTime();
+    var minutes = Math.max(0, Math.ceil((SEAT_TTL_MS - elapsed) / 60000));
+    return minutes + 'm';
   }
 
   function renderBoard(board){
@@ -215,14 +280,16 @@
       var pos = positions[i];
       var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       var cls = 'spot-free';
+      var timeLabel = '';
       if (occupant){
         occupied++;
         cls = occupant === me ? 'spot-mine' : 'spot-taken';
+        timeLabel = remainingLabel(board.seatSince && board.seatSince[i]);
       }
       g.setAttribute('class', 'spot ' + cls);
       var initial = occupant ? occupant.charAt(0).toUpperCase() : '';
-      g.innerHTML = standingFront(pos.x, pos.y, initial);
-      var tooltipText = occupant ? occupant : 'libero';
+      g.innerHTML = standingFront(pos.x, pos.y, initial, timeLabel);
+      var tooltipText = occupant ? (timeLabel ? occupant + ' · libero tra ' + timeLabel : occupant) : 'libero';
       g.addEventListener('mouseenter', function(evt){ showTooltip(tooltipText, evt); });
       g.addEventListener('mousemove', moveTooltip);
       g.addEventListener('mouseleave', hideTooltip);
