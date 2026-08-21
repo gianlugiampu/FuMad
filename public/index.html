@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FuMad</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  body { background: #f4f3ef; min-height: 100vh; }
+  .fumad-card { max-width: 480px; margin: 0 auto; }
+  .spot { cursor: pointer; }
+  .spot-body { transition: fill .15s ease; }
+  .spot-free .spot-body { fill: #ffffff; stroke: #adb5bd; }
+  .spot-mine .spot-body { fill: #198754; stroke: #146c43; }
+  .spot-taken .spot-body { fill: #dc3545; stroke: #b02a37; cursor: not-allowed; }
+  .spot-initial { font-size: 14px; font-weight: 600; fill: #495057; pointer-events: none; }
+  .spot-mine .spot-initial, .spot-taken .spot-initial { fill: #fff; }
+  .queue-circle {
+    width: 32px; height: 32px; border-radius: 50%; background: #0d6efd; color: #fff;
+    font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+  }
+  #error-box, #auth-error { display: none; }
+  #board-view { display: none; }
+</style>
+</head>
+<body>
+<div class="container py-5">
+
+  <div class="card fumad-card shadow-sm border-0" id="auth-card">
+    <div class="card-body p-4">
+      <h1 class="h4 mb-3">FuMad &#128684;</h1>
+      <ul class="nav nav-tabs mb-3">
+        <li class="nav-item"><button class="nav-link active" id="tab-login" type="button">Accedi</button></li>
+        <li class="nav-item"><button class="nav-link" id="tab-register" type="button">Registrati</button></li>
+      </ul>
+      <div class="mb-3">
+        <label class="form-label small text-secondary">Username</label>
+        <input type="text" id="auth-username" class="form-control" autocomplete="username">
+      </div>
+      <div class="mb-3">
+        <label class="form-label small text-secondary">Password</label>
+        <input type="password" id="auth-password" class="form-control" autocomplete="current-password">
+      </div>
+      <button id="auth-submit" class="btn btn-dark w-100">Accedi</button>
+      <div id="auth-error" class="alert alert-danger small mt-3 mb-0" role="alert"></div>
+    </div>
+  </div>
+
+  <div class="card fumad-card shadow-sm border-0" id="board-view">
+    <div class="card-body p-4">
+
+      <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+          <h1 class="h4 mb-0">FuMad &#128684;</h1>
+          <div class="text-secondary small">Ciao, <span id="me-label"></span> &middot; <a href="#" id="logout-link">esci</a></div>
+        </div>
+        <div class="text-secondary small text-end">
+          <div><span id="occ-count">0</span>/4 occupati</div>
+        </div>
+      </div>
+
+      <svg id="balcony-svg" viewBox="0 0 400 170" style="width:100%;height:auto;">
+        <g id="spots"></g>
+        <rect x="0" y="60" width="400" height="10" fill="#2b2b2b"/>
+        <rect x="0" y="130" width="400" height="10" fill="#2b2b2b"/>
+        <g stroke="#2b2b2b" stroke-width="6">
+          <line x1="14" y1="60" x2="14" y2="140"/><line x1="46" y1="60" x2="46" y2="140"/>
+          <line x1="78" y1="60" x2="78" y2="140"/><line x1="110" y1="60" x2="110" y2="140"/>
+          <line x1="142" y1="60" x2="142" y2="140"/><line x1="174" y1="60" x2="174" y2="140"/>
+          <line x1="206" y1="60" x2="206" y2="140"/><line x1="238" y1="60" x2="238" y2="140"/>
+          <line x1="270" y1="60" x2="270" y2="140"/><line x1="302" y1="60" x2="302" y2="140"/>
+          <line x1="334" y1="60" x2="334" y2="140"/><line x1="366" y1="60" x2="366" y2="140"/>
+        </g>
+        <rect x="0" y="140" width="400" height="18" fill="#c9a876"/>
+      </svg>
+
+      <div class="d-grid gap-2 mb-2">
+        <button id="book-btn" class="btn btn-dark">Occupa un posto</button>
+        <button id="queue-btn" class="btn btn-outline-primary">Mettiti in coda</button>
+      </div>
+      <div class="text-secondary small mb-2">Libera automaticamente ogni 15 min</div>
+      <div id="queue-list" class="d-flex gap-2 mb-3"></div>
+
+      <div id="error-box" class="alert alert-danger small mb-0" role="alert"></div>
+
+      <div class="mt-3">
+        <button id="history-toggle" class="btn btn-sm btn-outline-secondary w-100">Mostra cronologia</button>
+        <ul id="history-list" class="list-group list-group-flush small mt-2" style="display:none;"></ul>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var positions = [
+    { x: 80, y: 20 }, { x: 160, y: 20 }, { x: 240, y: 20 }, { x: 320, y: 20 }
+  ];
+  var mode = 'login';
+  var me = null;
+
+  var authCard = document.getElementById('auth-card');
+  var boardView = document.getElementById('board-view');
+  var authError = document.getElementById('auth-error');
+  var errorBox = document.getElementById('error-box');
+  var tooltip = document.createElement('div');
+  tooltip.style.cssText = 'position:fixed;pointer-events:none;background:#212529;color:#fff;font-size:12px;padding:3px 8px;border-radius:4px;display:none;z-index:1000;transform:translate(-50%,-130%);';
+  document.body.appendChild(tooltip);
+
+  function showTooltip(text, evt){ tooltip.textContent = text; tooltip.style.display = 'block'; moveTooltip(evt); }
+  function moveTooltip(evt){ tooltip.style.left = evt.clientX + 'px'; tooltip.style.top = evt.clientY + 'px'; }
+  function hideTooltip(){ tooltip.style.display = 'none'; }
+
+  function showAuthError(msg){ authError.textContent = msg; authError.style.display = 'block'; }
+  function clearAuthError(){ authError.style.display = 'none'; }
+  function showError(msg){ errorBox.textContent = msg; errorBox.style.display = 'block'; }
+  function clearError(){ errorBox.style.display = 'none'; }
+
+  async function api(path, options){
+    var res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, options));
+    var data = await res.json().catch(function(){ return {}; });
+    if (!res.ok) throw new Error(data.error || 'Errore imprevisto.');
+    return data;
+  }
+
+  document.getElementById('tab-login').addEventListener('click', function(){
+    mode = 'login';
+    this.classList.add('active');
+    document.getElementById('tab-register').classList.remove('active');
+    document.getElementById('auth-submit').textContent = 'Accedi';
+    clearAuthError();
+  });
+  document.getElementById('tab-register').addEventListener('click', function(){
+    mode = 'register';
+    this.classList.add('active');
+    document.getElementById('tab-login').classList.remove('active');
+    document.getElementById('auth-submit').textContent = 'Crea account';
+    clearAuthError();
+  });
+
+  document.getElementById('auth-submit').addEventListener('click', async function(){
+    clearAuthError();
+    var username = document.getElementById('auth-username').value.trim();
+    var password = document.getElementById('auth-password').value;
+    if (!username || !password){
+      showAuthError('Inserisci username e password.');
+      return;
+    }
+    try {
+      var data = await api('/api/' + mode, { method: 'POST', body: JSON.stringify({ username: username, password: password }) });
+      me = data.username;
+      showBoard();
+    } catch (e){
+      showAuthError(e.message);
+    }
+  });
+
+  document.getElementById('logout-link').addEventListener('click', async function(evt){
+    evt.preventDefault();
+    await api('/api/logout', { method: 'POST' });
+    me = null;
+    boardView.style.display = 'none';
+    authCard.style.display = 'block';
+  });
+
+  function showBoard(){
+    authCard.style.display = 'none';
+    boardView.style.display = 'block';
+    document.getElementById('me-label').textContent = me;
+    loadState();
+    if (!showBoard.polling){
+      showBoard.polling = setInterval(loadState, 5000);
+    }
+  }
+
+  function standingFront(cx, cy, initial){
+    var circle = '<circle class="spot-body" cx="'+cx+'" cy="'+cy+'" r="18" stroke-width="1.5"/>';
+    var text = initial ? '<text class="spot-initial" x="'+cx+'" y="'+cy+'" text-anchor="middle" dominant-baseline="central">'+initial+'</text>' : '';
+    return circle + text;
+  }
+
+  function renderBoard(board){
+    var spotsGroup = document.getElementById('spots');
+    spotsGroup.innerHTML = '';
+    var occupied = 0;
+    board.seats.forEach(function(occupant, i){
+      var pos = positions[i];
+      var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      var cls = 'spot-free';
+      if (occupant){
+        occupied++;
+        cls = occupant === me ? 'spot-mine' : 'spot-taken';
+      }
+      g.setAttribute('class', 'spot ' + cls);
+      var initial = occupant ? occupant.charAt(0).toUpperCase() : '';
+      g.innerHTML = standingFront(pos.x, pos.y, initial);
+      var tooltipText = occupant ? occupant : 'libero';
+      g.addEventListener('mouseenter', function(evt){ showTooltip(tooltipText, evt); });
+      g.addEventListener('mousemove', moveTooltip);
+      g.addEventListener('mouseleave', hideTooltip);
+      g.addEventListener('click', async function(){
+        clearError();
+        if (occupant !== me) return;
+        try {
+          var data = await api('/api/free', { method: 'POST' });
+          renderBoard(data);
+        } catch(e){ showError(e.message); }
+      });
+      spotsGroup.appendChild(g);
+    });
+    document.getElementById('occ-count').textContent = occupied;
+
+    var queueList = document.getElementById('queue-list');
+    queueList.innerHTML = '';
+    board.queue.forEach(function(name){
+      var circle = document.createElement('div');
+      circle.className = 'queue-circle';
+      circle.textContent = name.charAt(0).toUpperCase();
+      circle.addEventListener('mouseenter', function(evt){ showTooltip(name, evt); });
+      circle.addEventListener('mousemove', moveTooltip);
+      circle.addEventListener('mouseleave', hideTooltip);
+      queueList.appendChild(circle);
+    });
+
+    var historyList = document.getElementById('history-list');
+    historyList.innerHTML = '';
+    if (board.history.length === 0){
+      var empty = document.createElement('li');
+      empty.className = 'list-group-item text-secondary';
+      empty.textContent = 'Nessuna prenotazione ancora.';
+      historyList.appendChild(empty);
+    } else {
+      board.history.forEach(function(entry){
+        var li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between';
+        var time = new Date(entry.time);
+        var pad = function(x){ return x < 10 ? '0'+x : ''+x; };
+        var timeLabel = pad(time.getHours()) + ':' + pad(time.getMinutes());
+        li.innerHTML = '<span>'+entry.name+'</span><span class="text-secondary">'+timeLabel+'</span>';
+        historyList.appendChild(li);
+      });
+    }
+  }
+
+  async function loadState(){
+    try {
+      var data = await api('/api/state');
+      renderBoard(data);
+    } catch(e){
+      if (e.message === 'Non autenticato.'){
+        clearInterval(showBoard.polling);
+        showBoard.polling = null;
+        boardView.style.display = 'none';
+        authCard.style.display = 'block';
+      }
+    }
+  }
+
+  document.getElementById('book-btn').addEventListener('click', async function(){
+    clearError();
+    try {
+      var data = await api('/api/book', { method: 'POST' });
+      renderBoard(data);
+    } catch(e){ showError(e.message); }
+  });
+
+  document.getElementById('queue-btn').addEventListener('click', async function(){
+    clearError();
+    try {
+      var data = await api('/api/queue', { method: 'POST' });
+      renderBoard(data);
+    } catch(e){ showError(e.message); }
+  });
+
+  document.getElementById('history-toggle').addEventListener('click', function(){
+    var list = document.getElementById('history-list');
+    var btn = document.getElementById('history-toggle');
+    var visible = list.style.display !== 'none';
+    list.style.display = visible ? 'none' : 'block';
+    btn.textContent = visible ? 'Mostra cronologia' : 'Nascondi cronologia';
+  });
+
+  // check if already logged in (existing session cookie)
+  api('/api/me').then(function(data){
+    me = data.username;
+    showBoard();
+  }).catch(function(){ /* not logged in, stay on auth screen */ });
+})();
+</script>
+</body>
+</html>
