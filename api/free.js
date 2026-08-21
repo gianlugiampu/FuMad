@@ -1,6 +1,6 @@
 const { withClient } = require('../lib/db');
 const { requireAuth } = require('../lib/auth');
-const { withBoard } = require('../lib/board');
+const { withBoard, freeSeat } = require('../lib/board');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -17,7 +17,7 @@ module.exports = async (req, res) => {
         err.statusCode = 409;
         throw err;
       }
-      b.seats[idx] = null;
+      freeSeat(b, idx);
     }));
     res.status(200).json(board);
   } catch (e) {

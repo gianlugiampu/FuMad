@@ -6,7 +6,7 @@ Stessa app (login, board 4 posti, coda, cronologia, cleanup ogni 15 min) riscrit
 
 - **Storage**: da file JSON locali a **Postgres** (compatibile con Supabase, Neon, Vercel Postgres — qualsiasi Postgres va bene, basta la connection string).
 - **Sessioni**: da sessione server-side a **JWT stateless** in un cookie httpOnly. Nessuno stato di sessione da condividere tra istanze serverless.
-- **Cleanup ogni 15 minuti**: niente `setInterval` (non funziona su serverless). Ogni richiesta all'API controlla se sono passati 15+ minuti dall'ultimo cleanup e, in caso, libera i posti e riassegna dalla coda prima di rispondere. Nessun cron necessario, funziona anche sul piano gratuito.
+- **Cleanup ogni 15 minuti**: niente `setInterval` (non funziona su serverless). Ogni posto ha il proprio timer individuale: ogni richiesta all'API controlla, posto per posto, se sono passati 15+ minuti da quando è stato occupato e, in caso, lo libera e riassegna dalla coda prima di rispondere. Gli altri posti occupati più di recente non vengono toccati. Nessun cron necessario, funziona anche sul piano gratuito.
 
 ## Struttura
 

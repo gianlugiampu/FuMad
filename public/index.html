@@ -41,6 +41,10 @@
         <label class="form-label small text-secondary">Password</label>
         <input type="password" id="auth-password" class="form-control" autocomplete="current-password">
       </div>
+      <div class="mb-3" id="auth-password-confirm-group" style="display:none;">
+        <label class="form-label small text-secondary">Conferma password</label>
+        <input type="password" id="auth-password-confirm" class="form-control" autocomplete="new-password">
+      </div>
       <button id="auth-submit" class="btn btn-dark w-100">Accedi</button>
       <div id="auth-error" class="alert alert-danger small mt-3 mb-0" role="alert"></div>
     </div>
@@ -125,11 +129,15 @@
     return data;
   }
 
+  var passwordConfirmGroup = document.getElementById('auth-password-confirm-group');
+
   document.getElementById('tab-login').addEventListener('click', function(){
     mode = 'login';
     this.classList.add('active');
     document.getElementById('tab-register').classList.remove('active');
     document.getElementById('auth-submit').textContent = 'Accedi';
+    passwordConfirmGroup.style.display = 'none';
+    document.getElementById('auth-password-confirm').value = '';
     clearAuthError();
   });
   document.getElementById('tab-register').addEventListener('click', function(){
@@ -137,6 +145,7 @@
     this.classList.add('active');
     document.getElementById('tab-login').classList.remove('active');
     document.getElementById('auth-submit').textContent = 'Crea account';
+    passwordConfirmGroup.style.display = 'block';
     clearAuthError();
   });
 
@@ -147,6 +156,13 @@
     if (!username || !password){
       showAuthError('Inserisci username e password.');
       return;
+    }
+    if (mode === 'register'){
+      var passwordConfirm = document.getElementById('auth-password-confirm').value;
+      if (password !== passwordConfirm){
+        showAuthError('Le password non coincidono.');
+        return;
+      }
     }
     try {
       var data = await api('/api/' + mode, { method: 'POST', body: JSON.stringify({ username: username, password: password }) });

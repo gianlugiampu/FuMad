@@ -1,6 +1,6 @@
 const { withClient } = require('../lib/db');
 const { requireAuth } = require('../lib/auth');
-const { withBoard } = require('../lib/board');
+const { withBoard, occupySeat } = require('../lib/board');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -27,9 +27,7 @@ module.exports = async (req, res) => {
         err.statusCode = 409;
         throw err;
       }
-      b.seats[freeIndex] = username;
-      b.history.unshift({ name: username, time: new Date().toISOString() });
-      b.history = b.history.slice(0, 50);
+      occupySeat(b, freeIndex, username);
     }));
     res.status(200).json(board);
   } catch (e) {
