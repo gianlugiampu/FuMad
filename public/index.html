@@ -7,7 +7,22 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
   body { background: #f4f3ef; min-height: 100vh; }
-  .fumad-card { max-width: 480px; margin: 0 auto; }
+  .fumad-card { max-width: 480px; margin: 0 auto; position: relative; overflow: hidden; }
+  #rain-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; display: none; }
+  #rain-overlay.active { display: block; }
+  .rain-drop {
+    position: absolute;
+    top: -10%;
+    width: 2px;
+    height: 24px;
+    background: linear-gradient(to bottom, rgba(148,187,233,0), rgba(148,187,233,0.75));
+    animation-name: rain-fall;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+  @keyframes rain-fall {
+    to { top: 110%; }
+  }
   .spot { cursor: pointer; }
   .spot-body { transition: fill .15s ease; }
   .spot-free .spot-body { fill: #ffffff; stroke: #adb5bd; }
@@ -64,6 +79,7 @@
   </div>
 
   <div class="card fumad-card shadow-sm border-0" id="board-view">
+    <div id="rain-overlay"></div>
     <div class="card-body p-4">
 
       <div class="d-flex justify-content-between align-items-start mb-3">
@@ -133,6 +149,7 @@
   var SEAT_TTL_MS = 15 * 60 * 1000;
   var RESERVATION_TTL_MS = { privacy: 2 * 60 * 1000, gossip: 5 * 60 * 1000 };
   var NAPLES_LAT = 40.8518, NAPLES_LON = 14.2681;
+  var RAIN_CODES = [51,53,55,56,57,61,63,65,66,67,80,81,82,95,96,99];
   var WEATHER_ICONS = {
     0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️',
     45: '🌫️', 48: '🌫️',
@@ -274,6 +291,19 @@
     }
   }
 
+  function ensureRainDrops(){
+    var overlay = document.getElementById('rain-overlay');
+    if (overlay.childElementCount > 0) return;
+    for (var i = 0; i < 40; i++){
+      var drop = document.createElement('div');
+      drop.className = 'rain-drop';
+      drop.style.left = (Math.random() * 100) + '%';
+      drop.style.animationDuration = (0.4 + Math.random() * 0.5) + 's';
+      drop.style.animationDelay = (Math.random() * 2) + 's';
+      overlay.appendChild(drop);
+    }
+  }
+
   async function loadWeather(){
     try {
       var res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + NAPLES_LAT + '&longitude=' + NAPLES_LON + '&current_weather=true');
@@ -282,6 +312,12 @@
       var temp = Math.round(data.current_weather.temperature);
       document.getElementById('weather-icon').textContent = WEATHER_ICONS[code] || '🌡️';
       document.getElementById('weather-temp').textContent = temp + '°C, ' + weatherComment(code, temp);
+      if (RAIN_CODES.indexOf(code) !== -1){
+        ensureRainDrops();
+        document.getElementById('rain-overlay').classList.add('active');
+      } else {
+        document.getElementById('rain-overlay').classList.remove('active');
+      }
     } catch (e) {
       // meteo decorativo, se fallisce non blocca il resto della board
     }
@@ -355,6 +391,7 @@
     });
     document.getElementById('occ-count').textContent = occupied;
     document.getElementById('occ-count-total').textContent = board.seats.length;
+    document.getElementById('book-btn').textContent = board.seats.indexOf(me) !== -1 ? 'Libera posto' : 'Occupa un posto';
 
     var queueList = document.getElementById('queue-list');
     queueList.innerHTML = '';
@@ -397,8 +434,10 @@
 
   document.getElementById('book-btn').addEventListener('click', async function(){
     clearError();
+    var haveSeat = lastBoard && lastBoard.seats.indexOf(me) !== -1;
+    var endpoint = haveSeat ? '/api/free' : '/api/book';
     try {
-      var data = await api('/api/book', { method: 'POST', body: JSON.stringify({ balcony: currentBalcony }) });
+      var data = await api(endpoint, { method: 'POST', body: JSON.stringify({ balcony: currentBalcony }) });
       renderBoard(data);
     } catch(e){ showError(e.message); }
   });
