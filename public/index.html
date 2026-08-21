@@ -7,7 +7,16 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
   body { background: #f4f3ef; min-height: 100vh; }
+  html[data-bs-theme="dark"] body { background: #16181a; }
   .fumad-card { max-width: 480px; margin: 0 auto; position: relative; overflow: hidden; }
+  #heat-alert-overlay {
+    position: fixed; inset: 0; pointer-events: none;
+    background: rgba(253, 126, 20, 0.35);
+    display: none; z-index: 1000;
+  }
+  #heat-alert-overlay.active { display: block; }
+  .btn-heat { background: #fd7e14; border: 1px solid #c0530a; color: #000; }
+  .btn-heat:hover { background: #c0530a; color: #000; }
   #rain-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; display: none; }
   #rain-overlay.active { display: block; }
   .rain-drop {
@@ -48,6 +57,7 @@
 </style>
 </head>
 <body>
+<div id="heat-alert-overlay"></div>
 <div class="container py-5">
 
   <div class="card fumad-card shadow-sm border-0" id="auth-card">
@@ -88,19 +98,20 @@
           <div class="text-secondary small">Ciao, <span id="me-label"></span> &middot; <a href="#" id="logout-link">esci</a></div>
         </div>
         <div class="text-secondary small text-end">
-          <div><span id="occ-count">0</span>/<span id="occ-count-total">4</span> occupati</div>
+          <button id="theme-toggle-btn" class="btn btn-sm btn-outline-secondary" type="button">🌙</button>
         </div>
       </div>
 
       <div class="d-flex gap-2 mb-3">
-        <button id="balcony-1-btn" class="btn btn-sm btn-dark flex-fill">Balcone #1</button>
-        <button id="balcony-2-btn" class="btn btn-sm btn-outline-dark flex-fill">Balcone #2</button>
+        <button id="balcony-1-btn" class="btn btn-sm btn-primary flex-fill">Balcone #1</button>
+        <button id="balcony-2-btn" class="btn btn-sm btn-outline-primary flex-fill">Balcone #2</button>
       </div>
 
-      <div class="d-flex justify-content-center align-items-center gap-1 mb-3 text-secondary small" id="weather-bar">
+      <div class="d-flex justify-content-center align-items-center gap-1 mb-1 text-secondary small" id="weather-bar">
         <span id="weather-icon">&#9728;&#65039;</span>
         <span id="weather-temp"></span>
       </div>
+      <div id="heat-alert-text" class="text-center small mb-2" style="display:none;"></div>
 
       <svg id="balcony-svg" viewBox="0 0 400 170" style="width:100%;height:auto;">
         <g id="spots"></g>
@@ -137,7 +148,11 @@
         </div>
       </div>
 
-      <div id="error-box" class="alert alert-danger small mb-0" role="alert"></div>
+      <div id="error-box" class="alert alert-danger small mb-3" role="alert"></div>
+
+      <div class="d-flex justify-content-center">
+        <button id="heat-alert-btn" class="btn btn-sm btn-heat">🔥 Allerta Caldo</button>
+      </div>
 
     </div>
   </div>
@@ -291,6 +306,39 @@
     }
   }
 
+  function applyHeatAlert(heatAlert){
+    var overlay = document.getElementById('heat-alert-overlay');
+    var text = document.getElementById('heat-alert-text');
+    if (heatAlert && heatAlert.active){
+      overlay.classList.add('active');
+      text.textContent = heatAlert.by + ' ha attivato allarme caldo';
+      text.style.display = 'block';
+    } else {
+      overlay.classList.remove('active');
+      text.style.display = 'none';
+    }
+  }
+
+  var THEME_KEY = 'fumad-theme';
+  function applyTheme(theme){
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    document.getElementById('theme-toggle-btn').textContent = theme === 'dark' ? '☀️' : '🌙';
+    localStorage.setItem(THEME_KEY, theme);
+  }
+  document.getElementById('theme-toggle-btn').addEventListener('click', function(){
+    var current = document.documentElement.getAttribute('data-bs-theme') || 'light';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+  applyTheme(localStorage.getItem(THEME_KEY) || 'light');
+
+  document.getElementById('heat-alert-btn').addEventListener('click', async function(){
+    clearError();
+    try {
+      var data = await api('/api/heat-alert', { method: 'POST' });
+      applyHeatAlert(data.heatAlert);
+    } catch(e){ showError(e.message); }
+  });
+
   function ensureRainDrops(){
     var overlay = document.getElementById('rain-overlay');
     if (overlay.childElementCount > 0) return;
@@ -346,7 +394,6 @@
     lastBoard = board;
     var spotsGroup = document.getElementById('spots');
     spotsGroup.innerHTML = '';
-    var occupied = 0;
     var reservation = board.reservation;
     var positions = seatPositions(board.seats.length);
     board.seats.forEach(function(occupant, i){
@@ -357,12 +404,10 @@
       var initial = '';
       var tooltipText = 'libero';
       if (occupant === true){
-        occupied++;
         cls = 'spot-locked';
         initial = '🔒';
         tooltipText = 'posto bloccato';
       } else if (occupant){
-        occupied++;
         timeLabel = remainingLabel(board.seatSince && board.seatSince[i], seatTtlFor(reservation));
         initial = occupant.charAt(0).toUpperCase();
         tooltipText = timeLabel ? occupant + ' · libero tra ' + timeLabel : occupant;
@@ -389,9 +434,8 @@
       });
       spotsGroup.appendChild(g);
     });
-    document.getElementById('occ-count').textContent = occupied;
-    document.getElementById('occ-count-total').textContent = board.seats.length;
     document.getElementById('book-btn').textContent = board.seats.indexOf(me) !== -1 ? 'Libera posto' : 'Occupa un posto';
+    applyHeatAlert(board.heatAlert);
 
     var queueList = document.getElementById('queue-list');
     queueList.innerHTML = '';
@@ -422,8 +466,8 @@
 
   function switchBalcony(id){
     currentBalcony = id;
-    document.getElementById('balcony-1-btn').className = 'btn btn-sm flex-fill ' + (id === 1 ? 'btn-dark' : 'btn-outline-dark');
-    document.getElementById('balcony-2-btn').className = 'btn btn-sm flex-fill ' + (id === 2 ? 'btn-dark' : 'btn-outline-dark');
+    document.getElementById('balcony-1-btn').className = 'btn btn-sm flex-fill ' + (id === 1 ? 'btn-primary' : 'btn-outline-primary');
+    document.getElementById('balcony-2-btn').className = 'btn btn-sm flex-fill ' + (id === 2 ? 'btn-primary' : 'btn-outline-primary');
     document.getElementById('gossip-panel').style.display = 'none';
     clearError();
     loadState();

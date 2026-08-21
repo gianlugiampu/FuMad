@@ -10,6 +10,8 @@ Stessa app (login, due balconi con posti/coda/Privacy/Gossip, cleanup ogni 15 mi
 - **Privacy**: riserva tutto il balcone solo per te per 2 minuti — richiede che sia completamente libero. Il tuo posto appare azzurro, gli altri bloccati (nessuno può occuparli finché la riserva è attiva). Puoi terminarla in anticipo cliccando sul tuo posto.
 - **Gossip**: riserva il balcone per te + colleghi selezionati (dagli utenti registrati, fino a riempire i posti disponibili) per 5 minuti — richiede anche questo il balcone libero. I posti del gruppo appaiono rosa, gli eventuali posti in eccesso restano bloccati. Solo chi l'ha avviato può terminarla in anticipo.
 - **Due balconi**: Balcone #1 (4 posti) e Balcone #2 (2 posti), completamente indipendenti — stessa logica di prenotazione, coda, Privacy e Gossip per entrambi. Un tab in cima alla board fa passare dall'uno all'altro. Se il Balcone #1 è pieno e premi "Mettiti in coda", l'app propone di provare a occupare un posto nel Balcone #2 — se rifiuti (o è pieno anche quello) resti in coda sul Balcone #1.
+- **Tema chiaro/scuro**: interruttore in alto a destra (sfrutta `data-bs-theme` di Bootstrap 5.3), preferenza salvata in `localStorage` del browser.
+- **Allerta Caldo**: bottone in fondo alla board, condiviso da tutti gli utenti — chi lo attiva fa comparire uno sfondo arancione a tutti (via polling ogni 5s) con la scritta "{nome} ha attivato allarme caldo" sotto il meteo. Chiunque può disattivarlo ricliccando il bottone.
 
 ## Struttura
 
@@ -27,11 +29,13 @@ fumad-vercel/
     privacy.js    POST - riserva tutto il balcone solo per te, 2 minuti
     gossip.js     POST - riserva il balcone per te + fino a 3 colleghi selezionati, 5 minuti
     users.js      GET  - elenco utenti registrati (esclude te stesso), usato per selezionare chi invitare al Gossip
+    heat-alert.js POST - attiva/disattiva l'Allerta Caldo condivisa
   lib/
-    db.js         Pool Postgres + creazione schema automatica al primo uso
-    auth.js       Firma/verifica JWT, gestione cookie
-    board.js      Logica cleanup lazy, assegnazione dalla coda, prenotazioni Privacy/Gossip
-    rateLimit.js  Limite tentativi per IP su register/login
+    db.js          Pool Postgres + creazione schema automatica al primo uso
+    auth.js        Firma/verifica JWT, gestione cookie
+    board.js       Logica cleanup lazy, assegnazione dalla coda, prenotazioni Privacy/Gossip, capacita per balcone
+    rateLimit.js   Limite tentativi per IP su register/login
+    globalState.js Stato condiviso non legato a un balcone (Allerta Caldo)
   public/
     index.html    Frontend: login/registrazione + board
 ```
