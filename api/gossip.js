@@ -1,6 +1,6 @@
 const { withClient } = require('../lib/db');
 const { requireAuth } = require('../lib/auth');
-const { withBoard, startReservation } = require('../lib/board');
+const { withBoard, startReservation, parseBalconyId } = require('../lib/board');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -8,15 +8,13 @@ module.exports = async (req, res) => {
   }
   const username = requireAuth(req, res);
   if (!username) return;
+  const balcony = parseBalconyId(req.body && req.body.balcony);
 
   let { members } = req.body || {};
   if (!Array.isArray(members)) members = [];
   members = Array.from(new Set(members.filter((m) => typeof m === 'string' && m !== username)));
   if (members.length === 0) {
     return res.status(400).json({ error: 'Seleziona almeno un altro utente da invitare.' });
-  }
-  if (members.length > 3) {
-    return res.status(400).json({ error: 'Massimo 3 utenti oltre a te (4 posti in totale).' });
   }
 
   try {
@@ -27,11 +25,11 @@ module.exports = async (req, res) => {
         err.statusCode = 400;
         throw err;
       }
-      return withBoard(client, (b) => {
+      return withBoard(client, balcony, (b) => {
         startReservation(b, 'gossip', [username].concat(members));
       });
     });
-    res.status(200).json(board);
+    res.status(200).json({ ...board, balcony });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message || 'Errore imprevisto.' });
   }

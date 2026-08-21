@@ -72,8 +72,13 @@
           <div class="text-secondary small">Ciao, <span id="me-label"></span> &middot; <a href="#" id="logout-link">esci</a></div>
         </div>
         <div class="text-secondary small text-end">
-          <div><span id="occ-count">0</span>/4 occupati</div>
+          <div><span id="occ-count">0</span>/<span id="occ-count-total">4</span> occupati</div>
         </div>
+      </div>
+
+      <div class="d-flex gap-2 mb-3">
+        <button id="balcony-1-btn" class="btn btn-sm btn-dark flex-fill">Balcone #1</button>
+        <button id="balcony-2-btn" class="btn btn-sm btn-outline-dark flex-fill">Balcone #2</button>
       </div>
 
       <div class="d-flex justify-content-center align-items-center gap-1 mb-3 text-secondary small" id="weather-bar">
@@ -108,7 +113,7 @@
       <div id="queue-list" class="d-flex gap-2 mb-3"></div>
 
       <div id="gossip-panel" class="border rounded p-3 mb-3">
-        <div class="small text-secondary mb-2">Seleziona con chi vuoi il Gossip (max 3):</div>
+        <div class="small text-secondary mb-2" id="gossip-instructions">Seleziona con chi vuoi il Gossip:</div>
         <div id="gossip-user-list" class="d-flex flex-column gap-1 mb-3"></div>
         <div class="d-flex gap-2">
           <button id="gossip-confirm-btn" class="btn btn-sm btn-gossip">Avvia Gossip</button>
@@ -160,11 +165,18 @@
     if (temp <= 5) return base + ', freddo pungente';
     return base;
   }
-  var positions = [
-    { x: 80, y: 20 }, { x: 160, y: 20 }, { x: 240, y: 20 }, { x: 320, y: 20 }
-  ];
+  function seatPositions(count){
+    var spacing = 400 / (count + 1);
+    var arr = [];
+    for (var i = 1; i <= count; i++){
+      arr.push({ x: spacing * i, y: 20 });
+    }
+    return arr;
+  }
   var mode = 'login';
   var me = null;
+  var currentBalcony = 1;
+  var lastBoard = null;
 
   var authCard = document.getElementById('auth-card');
   var boardView = document.getElementById('board-view');
@@ -295,10 +307,12 @@
   }
 
   function renderBoard(board){
+    lastBoard = board;
     var spotsGroup = document.getElementById('spots');
     spotsGroup.innerHTML = '';
     var occupied = 0;
     var reservation = board.reservation;
+    var positions = seatPositions(board.seats.length);
     board.seats.forEach(function(occupant, i){
       var pos = positions[i];
       var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -333,13 +347,14 @@
         clearError();
         if (occupant !== me) return;
         try {
-          var data = await api('/api/free', { method: 'POST' });
+          var data = await api('/api/free', { method: 'POST', body: JSON.stringify({ balcony: currentBalcony }) });
           renderBoard(data);
         } catch(e){ showError(e.message); }
       });
       spotsGroup.appendChild(g);
     });
     document.getElementById('occ-count').textContent = occupied;
+    document.getElementById('occ-count-total').textContent = board.seats.length;
 
     var queueList = document.getElementById('queue-list');
     queueList.innerHTML = '';
@@ -356,7 +371,7 @@
 
   async function loadState(){
     try {
-      var data = await api('/api/state');
+      var data = await api('/api/state?balcony=' + currentBalcony);
       renderBoard(data);
     } catch(e){
       if (e.message === 'Non autenticato.'){
@@ -368,18 +383,44 @@
     }
   }
 
+  function switchBalcony(id){
+    currentBalcony = id;
+    document.getElementById('balcony-1-btn').className = 'btn btn-sm flex-fill ' + (id === 1 ? 'btn-dark' : 'btn-outline-dark');
+    document.getElementById('balcony-2-btn').className = 'btn btn-sm flex-fill ' + (id === 2 ? 'btn-dark' : 'btn-outline-dark');
+    document.getElementById('gossip-panel').style.display = 'none';
+    clearError();
+    loadState();
+  }
+
+  document.getElementById('balcony-1-btn').addEventListener('click', function(){ switchBalcony(1); });
+  document.getElementById('balcony-2-btn').addEventListener('click', function(){ switchBalcony(2); });
+
   document.getElementById('book-btn').addEventListener('click', async function(){
     clearError();
     try {
-      var data = await api('/api/book', { method: 'POST' });
+      var data = await api('/api/book', { method: 'POST', body: JSON.stringify({ balcony: currentBalcony }) });
       renderBoard(data);
     } catch(e){ showError(e.message); }
   });
 
   document.getElementById('queue-btn').addEventListener('click', async function(){
     clearError();
+    var balconyFull = currentBalcony === 1 && lastBoard && lastBoard.seats.every(function(s){ return s; });
+    if (balconyFull){
+      var tryOther = confirm('Il Balcone #1 e pieno. Vuoi provare a occupare un posto nel Balcone #2?');
+      if (tryOther){
+        try {
+          var data2 = await api('/api/book', { method: 'POST', body: JSON.stringify({ balcony: 2 }) });
+          switchBalcony(2);
+          renderBoard(data2);
+          return;
+        } catch(e){
+          // balcone 2 pieno anche: si prosegue con la coda sul balcone 1 qui sotto
+        }
+      }
+    }
     try {
-      var data = await api('/api/queue', { method: 'POST' });
+      var data = await api('/api/queue', { method: 'POST', body: JSON.stringify({ balcony: currentBalcony }) });
       renderBoard(data);
     } catch(e){ showError(e.message); }
   });
@@ -388,7 +429,7 @@
     clearError();
     document.getElementById('gossip-panel').style.display = 'none';
     try {
-      var data = await api('/api/privacy', { method: 'POST' });
+      var data = await api('/api/privacy', { method: 'POST', body: JSON.stringify({ balcony: currentBalcony }) });
       renderBoard(data);
     } catch(e){ showError(e.message); }
   });
@@ -397,6 +438,8 @@
     clearError();
     try {
       var data = await api('/api/users');
+      var maxInvite = (lastBoard ? lastBoard.seats.length : 4) - 1;
+      document.getElementById('gossip-instructions').textContent = 'Seleziona con chi vuoi il Gossip (max ' + maxInvite + '):';
       var list = document.getElementById('gossip-user-list');
       list.innerHTML = '';
       if (data.users.length === 0){
@@ -428,16 +471,17 @@
   document.getElementById('gossip-confirm-btn').addEventListener('click', async function(){
     clearError();
     var checked = Array.prototype.slice.call(document.querySelectorAll('#gossip-user-list input:checked')).map(function(el){ return el.value; });
+    var maxInvite = (lastBoard ? lastBoard.seats.length : 4) - 1;
     if (checked.length === 0){
       showError('Seleziona almeno un utente da invitare.');
       return;
     }
-    if (checked.length > 3){
-      showError('Massimo 3 utenti oltre a te.');
+    if (checked.length > maxInvite){
+      showError('Massimo ' + maxInvite + ' utenti oltre a te.');
       return;
     }
     try {
-      var data = await api('/api/gossip', { method: 'POST', body: JSON.stringify({ members: checked }) });
+      var data = await api('/api/gossip', { method: 'POST', body: JSON.stringify({ members: checked, balcony: currentBalcony }) });
       document.getElementById('gossip-panel').style.display = 'none';
       renderBoard(data);
     } catch(e){ showError(e.message); }
